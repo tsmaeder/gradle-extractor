@@ -83,7 +83,6 @@
                 </transformer>
               </transformers>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <finalName>${project.artifactId}</finalName>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
