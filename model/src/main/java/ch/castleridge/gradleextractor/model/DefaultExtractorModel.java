@@ -46,9 +46,10 @@ public final class DefaultExtractorModel implements ExtractorModel {
     if (this == obj) {
       return true;
     }
-    if (!(obj instanceof DefaultExtractorModel other)) {
+    if (!(obj instanceof DefaultExtractorModel)) {
       return false;
     }
+    DefaultExtractorModel other = (DefaultExtractorModel) obj;
     return Objects.equals(projects, other.projects) && Objects.equals(coveredPaths, other.coveredPaths);
   }
 

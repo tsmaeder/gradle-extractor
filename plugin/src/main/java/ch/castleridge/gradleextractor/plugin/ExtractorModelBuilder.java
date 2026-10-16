@@ -70,12 +70,15 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     }
   }
 
+  private static final String[] BUILD_FILE_NAMES = {
+      "settings.gradle",
+      "settings.gradle.kts",
+      "build.gradle",
+      "build.gradle.kts"
+  };
+
   private static void addBuildFiles(Set<String> covered, File projectDir) {
-    for (String name : List.of(
-        "settings.gradle",
-        "settings.gradle.kts",
-        "build.gradle",
-        "build.gradle.kts")) {
+    for (String name : BUILD_FILE_NAMES) {
       File f = new File(projectDir, name);
       if (f.isFile()) {
         covered.add(f.getAbsolutePath());
@@ -140,8 +143,8 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
       return java.getSourceSets();
     }
     Object legacy = p.getExtensions().findByName("sourceSets");
-    if (legacy instanceof SourceSetContainer container) {
-      return container;
+    if (legacy instanceof SourceSetContainer) {
+      return (SourceSetContainer) legacy;
     }
     return null;
   }
@@ -180,8 +183,8 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     List<String> options = new ArrayList<>();
     String taskName = sourceSet.getCompileJavaTaskName();
     Object task = p.getTasks().findByName(taskName);
-    if (task instanceof JavaCompile javaCompile) {
-      CompileOptions compileOptions = javaCompile.getOptions();
+    if (task instanceof JavaCompile) {
+      CompileOptions compileOptions = ((JavaCompile) task).getOptions();
       if (compileOptions.getCompilerArgs() != null) {
         options.addAll(compileOptions.getCompilerArgs());
       }

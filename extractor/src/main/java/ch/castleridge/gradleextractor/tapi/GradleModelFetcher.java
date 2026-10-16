@@ -4,6 +4,7 @@
 package ch.castleridge.gradleextractor.tapi;
 
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 
@@ -26,12 +27,18 @@ public final class GradleModelFetcher implements Closeable {
   }
 
   public ExtractorModel fetch(Path projectDir) {
+    File daemonJdk = DaemonJvmResolver.resolve(projectDir);
     GradleConnector connector = GradleConnector.newConnector()
         .forProjectDirectory(projectDir.toFile())
         .useBuildDistribution();
     try (ProjectConnection connection = connector.connect()) {
       return connection.model(ExtractorModel.class)
-          .withArguments("--init-script", initScript.toString())
+          .withArguments(
+              "--init-script", initScript.toString(),
+              // Model fetch does not benefit from the task build cache; disabling it
+              // avoids "Build cache controller already set" with some settings scripts.
+              "--no-build-cache")
+          .setJavaHome(daemonJdk)
           .get();
     }
   }

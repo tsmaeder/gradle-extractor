@@ -71,9 +71,10 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
     if (this == obj) {
       return true;
     }
-    if (!(obj instanceof DefaultExtractorSourceSet other)) {
+    if (!(obj instanceof DefaultExtractorSourceSet)) {
       return false;
     }
+    DefaultExtractorSourceSet other = (DefaultExtractorSourceSet) obj;
     return Objects.equals(name, other.name)
         && Objects.equals(sourceDirs, other.sourceDirs)
         && Objects.equals(compileClasspath, other.compileClasspath)

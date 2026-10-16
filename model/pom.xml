@@ -18,4 +18,16 @@
 
   <name>gradle-extractor-model</name>
   <description>Serializable Tooling API model shared by plugin and extractor</description>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>${plugin.compiler.release}</release>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

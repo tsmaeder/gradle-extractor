@@ -91,9 +91,10 @@ public final class DefaultExtractorProject implements ExtractorProject {
     if (this == obj) {
       return true;
     }
-    if (!(obj instanceof DefaultExtractorProject other)) {
+    if (!(obj instanceof DefaultExtractorProject)) {
       return false;
     }
+    DefaultExtractorProject other = (DefaultExtractorProject) obj;
     return Objects.equals(name, other.name)
         && Objects.equals(path, other.path)
         && Objects.equals(projectDir, other.projectDir)
