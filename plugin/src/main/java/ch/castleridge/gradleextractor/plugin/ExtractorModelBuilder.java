@@ -12,6 +12,7 @@ import java.util.Set;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
@@ -45,7 +46,10 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     Set<String> covered = new LinkedHashSet<>();
 
     for (Project p : root.getAllprojects()) {
-      projects.add(mapProject(p));
+      // Gradle 9+ requires the project's exclusive lock when resolving configurations.
+      // ToolingModelBuilder only locks the queried project, so lock each subproject
+      // before mapping (same pattern as EclipseModelBuilder).
+      projects.add(mapProjectLocked(p));
       addCovered(covered, p);
     }
 
@@ -79,6 +83,10 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
         covered.add(f.getAbsolutePath());
       }
     }
+  }
+
+  private static ExtractorProject mapProjectLocked(Project p) {
+    return ((ProjectInternal) p).getOwner().fromMutableState(ExtractorModelBuilder::mapProject);
   }
 
   private static ExtractorProject mapProject(Project p) {
