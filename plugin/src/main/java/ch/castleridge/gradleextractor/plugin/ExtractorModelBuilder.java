@@ -191,7 +191,7 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     if (configuration == null) {
       return new ArrayList<>();
     }
-    configuration.getDependencies().withType(ProjectDependency.class).forEach(dep -> {
+    configuration.getAllDependencies().withType(ProjectDependency.class).forEach(dep -> {
       String path = dep.getPath();
       if (path != null && !path.isBlank()) {
         deps.add(path);
