@@ -17,7 +17,7 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
   private List<String> sourceDirs = new ArrayList<>();
   private List<String> compileClasspath = new ArrayList<>();
   private List<String> javacOptions = new ArrayList<>();
-  private List<String> projectDependencies = new ArrayList<>();
+  private List<String> outputDirs = new ArrayList<>();
 
   public DefaultExtractorSourceSet() {}
 
@@ -58,12 +58,12 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
   }
 
   @Override
-  public List<String> getProjectDependencies() {
-    return projectDependencies;
+  public List<String> getOutputDirs() {
+    return outputDirs;
   }
 
-  public void setProjectDependencies(List<String> projectDependencies) {
-    this.projectDependencies = projectDependencies != null ? projectDependencies : new ArrayList<>();
+  public void setOutputDirs(List<String> outputDirs) {
+    this.outputDirs = outputDirs != null ? outputDirs : new ArrayList<>();
   }
 
   @Override
@@ -78,11 +78,11 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
         && Objects.equals(sourceDirs, other.sourceDirs)
         && Objects.equals(compileClasspath, other.compileClasspath)
         && Objects.equals(javacOptions, other.javacOptions)
-        && Objects.equals(projectDependencies, other.projectDependencies);
+        && Objects.equals(outputDirs, other.outputDirs);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, sourceDirs, compileClasspath, javacOptions, projectDependencies);
+    return Objects.hash(name, sourceDirs, compileClasspath, javacOptions, outputDirs);
   }
 }

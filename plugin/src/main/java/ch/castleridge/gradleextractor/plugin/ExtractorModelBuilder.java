@@ -10,8 +10,6 @@ import java.util.List;
 import java.util.Set;
 
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
@@ -166,8 +164,15 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     }
     out.setCompileClasspath(classpath);
 
+    List<String> outputs = new ArrayList<>();
+    for (File dir : sourceSet.getOutput().getClassesDirs().getFiles()) {
+      if (dir != null) {
+        outputs.add(dir.getAbsolutePath());
+      }
+    }
+    out.setOutputDirs(outputs);
+
     out.setJavacOptions(resolveJavacOptions(p, sourceSet));
-    out.setProjectDependencies(resolveProjectDependencies(p, sourceSet));
     return out;
   }
 
@@ -182,21 +187,5 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
       }
     }
     return options;
-  }
-
-  private static List<String> resolveProjectDependencies(Project p, SourceSet sourceSet) {
-    Set<String> deps = new LinkedHashSet<>();
-    String configName = sourceSet.getCompileClasspathConfigurationName();
-    Configuration configuration = p.getConfigurations().findByName(configName);
-    if (configuration == null) {
-      return new ArrayList<>();
-    }
-    configuration.getAllDependencies().withType(ProjectDependency.class).forEach(dep -> {
-      String path = dep.getPath();
-      if (path != null && !path.isBlank()) {
-        deps.add(path);
-      }
-    });
-    return new ArrayList<>(deps);
   }
 }

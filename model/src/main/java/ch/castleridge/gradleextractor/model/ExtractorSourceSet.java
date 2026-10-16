@@ -22,8 +22,9 @@ public interface ExtractorSourceSet extends Serializable {
   List<String> getJavacOptions();
 
   /**
-   * Gradle project paths of other projects this source set depends on (workspace
-   * {@code dependsOn} candidates).
+   * Absolute class-output directories for this source set (from
+   * {@code SourceSetOutput.getClassesDirs()}), used to map classpath entries
+   * back to workspace namespaces.
    */
-  List<String> getProjectDependencies();
+  List<String> getOutputDirs();
 }

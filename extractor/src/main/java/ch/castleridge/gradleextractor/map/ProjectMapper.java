@@ -6,8 +6,11 @@ package ch.castleridge.gradleextractor.map;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -20,6 +23,11 @@ import ch.castleridge.gradleextractor.model.ExtractorSourceSet;
 
 /**
  * Maps an {@link ExtractorModel} to a Metals-schema mbt fragment.
+ *
+ * <p>{@code dependsOn} is derived from each source set's resolved compile
+ * classpath (workspace module outputs), matching mavenimporter: flat,
+ * classpath-accurate namespace ids. Non-main source sets always depend on
+ * the same project's main namespace.
  */
 public final class ProjectMapper {
 
@@ -29,21 +37,30 @@ public final class ProjectMapper {
     MbtDocument document = new MbtDocument();
     Map<String, String> pathToNamespaceId = new LinkedHashMap<>();
     Map<String, MbtDependencyModule> depsById = new LinkedHashMap<>();
+    Map<Path, String> outputDirToNamespace = new LinkedHashMap<>();
+    List<ProjectDirEntry> projectDirs = new ArrayList<>();
 
     for (ExtractorProject project : model.getProjects()) {
+      Path projectDir = Path.of(project.getProjectDir()).toAbsolutePath().normalize();
+      projectDirs.add(new ProjectDirEntry(projectDir, project));
       for (ExtractorSourceSet sourceSet : project.getSourceSets()) {
         String nsId = namespaceId(project, sourceSet);
         pathToNamespaceId.put(projectKey(project.getPath(), sourceSet.getName()), nsId);
+        for (String outputDir : sourceSet.getOutputDirs()) {
+          if (outputDir == null || outputDir.isBlank()) {
+            continue;
+          }
+          Path out = Path.of(outputDir).toAbsolutePath().normalize();
+          outputDirToNamespace.put(out, nsId);
+        }
       }
     }
-
-    Set<String> workspaceProjectPaths = new LinkedHashSet<>();
-    for (ExtractorProject project : model.getProjects()) {
-      workspaceProjectPaths.add(project.getPath());
-    }
+    projectDirs.sort(Comparator.comparingInt((ProjectDirEntry e) -> e.dir.getNameCount()).reversed());
 
     for (ExtractorProject project : model.getProjects()) {
+      String mainNsId = pathToNamespaceId.get(projectKey(project.getPath(), "main"));
       for (ExtractorSourceSet sourceSet : project.getSourceSets()) {
+        String selfNsId = namespaceId(project, sourceSet);
         MbtNamespace ns = new MbtNamespace();
         ns.javaHome = project.getJavaHome();
         if (sourceSet.getJavacOptions() != null) {
@@ -55,26 +72,32 @@ public final class ProjectMapper {
             ns.sources.add(relative);
           }
         }
-        for (String depPath : sourceSet.getProjectDependencies()) {
-          String mainKey = projectKey(depPath, "main");
-          String depNs = pathToNamespaceId.get(mainKey);
-          if (depNs != null && workspaceProjectPaths.contains(depPath)) {
-            ns.dependsOn.add(depNs);
-          }
-        }
+
+        LinkedHashSet<String> dependsOn = new LinkedHashSet<>();
         for (String cpEntry : sourceSet.getCompileClasspath()) {
-          Path entry = Path.of(cpEntry);
-          if (!Files.isRegularFile(entry) || !cpEntry.endsWith(".jar")) {
+          if (cpEntry == null || cpEntry.isBlank()) {
             continue;
           }
-          if (isUnderAnyProjectDir(model, entry)) {
+          Path entry = Path.of(cpEntry).toAbsolutePath().normalize();
+          String workspaceNs = namespaceForClasspathEntry(entry, outputDirToNamespace, projectDirs);
+          if (workspaceNs != null) {
+            if (!workspaceNs.equals(selfNsId)) {
+              dependsOn.add(workspaceNs);
+            }
             continue;
           }
-          String id = jarId(entry);
-          depsById.putIfAbsent(id, new MbtDependencyModule(id, toFileUri(entry), null));
-          ns.dependencyModules.add(id);
+          if (Files.isRegularFile(entry) && cpEntry.endsWith(".jar")) {
+            String id = jarId(entry);
+            depsById.putIfAbsent(id, new MbtDependencyModule(id, toFileUri(entry), null));
+            ns.dependencyModules.add(id);
+          }
         }
-        document.namespaces.put(namespaceId(project, sourceSet), ns);
+
+        if (!"main".equals(sourceSet.getName()) && mainNsId != null) {
+          dependsOn.add(mainNsId);
+        }
+        ns.dependsOn.addAll(dependsOn);
+        document.namespaces.put(selfNsId, ns);
       }
     }
 
@@ -100,16 +123,56 @@ public final class ProjectMapper {
     return covered;
   }
 
+  /**
+   * Maps a classpath entry to a workspace namespace id, or {@code null} if it is
+   * not under any known project output / project directory.
+   */
+  static String namespaceForClasspathEntry(
+      Path entry,
+      Map<Path, String> outputDirToNamespace,
+      List<ProjectDirEntry> projectDirsLongestFirst) {
+    String fromOutput = matchOutputDir(entry, outputDirToNamespace);
+    if (fromOutput != null) {
+      return fromOutput;
+    }
+    for (ProjectDirEntry projectDir : projectDirsLongestFirst) {
+      if (entry.startsWith(projectDir.dir)) {
+        return namespaceId(projectDir.project, "main");
+      }
+    }
+    return null;
+  }
+
+  private static String matchOutputDir(Path entry, Map<Path, String> outputDirToNamespace) {
+    String best = null;
+    int bestCount = -1;
+    for (Map.Entry<Path, String> e : outputDirToNamespace.entrySet()) {
+      Path out = e.getKey();
+      if (entry.equals(out) || entry.startsWith(out)) {
+        int count = out.getNameCount();
+        if (count > bestCount) {
+          bestCount = count;
+          best = e.getValue();
+        }
+      }
+    }
+    return best;
+  }
+
   private static String namespaceId(ExtractorProject project, ExtractorSourceSet sourceSet) {
+    return namespaceId(project, sourceSet.getName());
+  }
+
+  private static String namespaceId(ExtractorProject project, String sourceSetName) {
     String group = project.getGroup() != null && !project.getGroup().isBlank()
         ? project.getGroup()
         : project.getName();
     String version = project.getVersion() != null ? project.getVersion() : "unspecified";
     String base = group + ":" + project.getName() + ":" + version;
-    if ("main".equals(sourceSet.getName())) {
+    if ("main".equals(sourceSetName)) {
       return base;
     }
-    return base + ":" + sourceSet.getName();
+    return base + ":" + sourceSetName;
   }
 
   private static String projectKey(String gradlePath, String sourceSetName) {
@@ -129,17 +192,6 @@ public final class ProjectMapper {
     }
   }
 
-  private static boolean isUnderAnyProjectDir(ExtractorModel model, Path jar) {
-    Path normalized = jar.toAbsolutePath().normalize();
-    for (ExtractorProject project : model.getProjects()) {
-      Path dir = Path.of(project.getProjectDir()).toAbsolutePath().normalize();
-      if (normalized.startsWith(dir)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private static String jarId(Path jar) {
     String name = jar.getFileName().toString();
     if (name.endsWith(".jar")) {
@@ -152,4 +204,6 @@ public final class ProjectMapper {
     URI uri = path.toAbsolutePath().normalize().toUri();
     return uri.toString();
   }
+
+  record ProjectDirEntry(Path dir, ExtractorProject project) {}
 }
