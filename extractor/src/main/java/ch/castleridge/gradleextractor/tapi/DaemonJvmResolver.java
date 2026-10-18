@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
  *
  * <p>The Tooling API client may run on a newer JVM (e.g. 25) than the project's Gradle
  * distribution supports. The wrapper only pins the Gradle version, not the daemon JDK.
+ * When present, {@code gradle/gradle-daemon-jvm.properties} {@code toolchainVersion} is honored.
  */
 public final class DaemonJvmResolver {
 
@@ -59,11 +60,26 @@ public final class DaemonJvmResolver {
    * Resolves a daemon JDK for {@code projectDir}, or throws if none is compatible.
    */
   public static File resolve(Path projectDir) {
+    Optional<JdkInstallation> override = fromEnv(ENV_OVERRIDE);
+    Optional<JdkInstallation> javaHome = fromPath(Path.of(System.getProperty("java.home", "")));
+    Optional<JdkInstallation> javaHomeEnv = fromEnv("JAVA_HOME");
+    return resolve(projectDir, collectCandidates(), override, javaHome, javaHomeEnv);
+  }
+
+  /**
+   * Resolves using explicit candidates and preferred homes (for tests).
+   * When {@code override} is present it is used like {@code GRADLE_EXTRACTOR_JAVA_HOME}.
+   */
+  static File resolve(
+      Path projectDir,
+      List<JdkInstallation> candidates,
+      Optional<JdkInstallation> override,
+      Optional<JdkInstallation> javaHome,
+      Optional<JdkInstallation> javaHomeEnv) {
     GradleVersion gradle = readWrapperVersion(projectDir).orElse(new GradleVersion(8, 0, 0));
     int minJava = minJavaFor(gradle);
     int maxJava = maxJavaFor(gradle);
 
-    Optional<JdkInstallation> override = fromEnv(ENV_OVERRIDE);
     if (override.isPresent()) {
       JdkInstallation jdk = override.get();
       if (jdk.major >= minJava && jdk.major <= maxJava) {
@@ -75,7 +91,25 @@ public final class DaemonJvmResolver {
               + " requires a daemon JVM between " + minJava + " and " + maxJava);
     }
 
-    return findBest(minJava, maxJava)
+    Optional<Integer> pinned = readDaemonJvmToolchainVersion(projectDir);
+    if (pinned.isPresent()) {
+      int required = pinned.get();
+      if (required < minJava || required > maxJava) {
+        throw new IllegalStateException(
+            "gradle/gradle-daemon-jvm.properties toolchainVersion=" + required
+                + " is outside the daemon JVM range " + minJava + "–" + maxJava
+                + " for Gradle " + gradle);
+      }
+      return findExact(candidates, required)
+          .orElseThrow(() -> new IllegalStateException(
+              "gradle/gradle-daemon-jvm.properties requires Java " + required
+                  + ", but no matching JDK was found. Install JDK " + required
+                  + " or set " + ENV_OVERRIDE + "."))
+          .home
+          .toFile();
+    }
+
+    return selectBest(candidates, minJava, maxJava, javaHome, javaHomeEnv)
         .orElseThrow(() -> new IllegalStateException(
             "No JDK in range " + minJava + "–" + maxJava
                 + " found for Gradle " + gradle
@@ -106,6 +140,31 @@ public final class DaemonJvmResolver {
     return Optional.of(new GradleVersion(major, minor, patch));
   }
 
+  /**
+   * Reads {@code toolchainVersion} from {@code gradle/gradle-daemon-jvm.properties}, if present.
+   */
+  static Optional<Integer> readDaemonJvmToolchainVersion(Path projectDir) {
+    Path props = projectDir.resolve("gradle/gradle-daemon-jvm.properties");
+    if (!Files.isRegularFile(props)) {
+      return Optional.empty();
+    }
+    Properties p = new Properties();
+    try (var in = Files.newInputStream(props)) {
+      p.load(in);
+    } catch (IOException e) {
+      return Optional.empty();
+    }
+    String raw = p.getProperty("toolchainVersion");
+    if (raw == null || raw.isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.of(Integer.parseInt(raw.trim()));
+    } catch (NumberFormatException e) {
+      return Optional.empty();
+    }
+  }
+
   static int minJavaFor(GradleVersion g) {
     return g.major >= 9 ? 17 : 8;
   }
@@ -119,7 +178,43 @@ public final class DaemonJvmResolver {
     return 8;
   }
 
-  static Optional<JdkInstallation> findBest(int minJava, int maxJava) {
+  /**
+   * Selects a daemon JDK when no {@code toolchainVersion} pin is present.
+   *
+   * <p>Preference: {@code java.home} if in range, then {@code JAVA_HOME} if in range, then highest
+   * major in range among {@code candidates}.
+   */
+  static Optional<JdkInstallation> selectBest(
+      List<JdkInstallation> candidates,
+      int minJava,
+      int maxJava,
+      Optional<JdkInstallation> javaHome,
+      Optional<JdkInstallation> javaHomeEnv) {
+    if (javaHome.isPresent()) {
+      JdkInstallation j = javaHome.get();
+      if (j.major >= minJava && j.major <= maxJava) {
+        return javaHome;
+      }
+    }
+    if (javaHomeEnv.isPresent()) {
+      JdkInstallation j = javaHomeEnv.get();
+      if (j.major >= minJava && j.major <= maxJava) {
+        return javaHomeEnv;
+      }
+    }
+    return candidates.stream()
+        .filter(j -> j.major >= minJava && j.major <= maxJava)
+        .max(Comparator.comparingInt((JdkInstallation j) -> j.major)
+            .thenComparing(j -> j.home.toString()));
+  }
+
+  static Optional<JdkInstallation> findExact(List<JdkInstallation> candidates, int major) {
+    return candidates.stream()
+        .filter(j -> j.major == major)
+        .max(Comparator.comparing(j -> j.home.toString()));
+  }
+
+  static List<JdkInstallation> collectCandidates() {
     List<JdkInstallation> candidates = new ArrayList<>();
     addIfPresent(candidates, fromPath(Path.of(System.getProperty("java.home", ""))));
     String javaHomeEnv = System.getenv("JAVA_HOME");
@@ -138,11 +233,7 @@ public final class DaemonJvmResolver {
         // skip unreadable roots
       }
     }
-
-    return candidates.stream()
-        .filter(j -> j.major >= minJava && j.major <= maxJava)
-        .max(Comparator.comparingInt((JdkInstallation j) -> j.major)
-            .thenComparing(j -> j.home.toString()));
+    return candidates;
   }
 
   private static Optional<JdkInstallation> fromEnv(String name) {
