@@ -45,15 +45,17 @@ public final class CandidateScanner {
     found.sort(Comparator
         .comparingInt(CandidateScanner::pathSegmentCount)
         .thenComparing(Path::toString));
-    return new LinkedHashSet<>(filterNestedBuildOnly(found));
+    return new LinkedHashSet<>(filterToImportRoots(found));
   }
 
   /**
-   * Keeps settings-based roots and standalone single-project builds. Drops
-   * {@code build.gradle(.kts)}-only directories that sit under another settings
-   * root — those are subprojects, not separate Tooling API entry points.
+   * Keeps outermost settings roots and standalone single-project builds.
+   * Drops settings roots nested under another settings root (fixtures,
+   * {@code buildSrc}, included-build trees) and {@code build.gradle(.kts)}-only
+   * directories under a settings root — those are not separate Tooling API entry
+   * points.
    */
-  static List<Path> filterNestedBuildOnly(List<Path> found) {
+  static List<Path> filterToImportRoots(List<Path> found) {
     List<Path> settingsRoots = new ArrayList<>();
     for (Path dir : found) {
       if (hasSettings(dir)) {
@@ -62,22 +64,22 @@ public final class CandidateScanner {
     }
     List<Path> filtered = new ArrayList<>();
     for (Path dir : found) {
-      if (hasSettings(dir)) {
-        filtered.add(dir);
+      if (hasAncestorSettingsRoot(dir, settingsRoots)) {
         continue;
       }
-      boolean underSettingsRoot = false;
-      for (Path root : settingsRoots) {
-        if (dir.startsWith(root) && !dir.equals(root)) {
-          underSettingsRoot = true;
-          break;
-        }
-      }
-      if (!underSettingsRoot) {
-        filtered.add(dir);
-      }
+      filtered.add(dir);
     }
     return filtered;
+  }
+
+  /** True if some other settings root is a strict ancestor of {@code dir}. */
+  private static boolean hasAncestorSettingsRoot(Path dir, List<Path> settingsRoots) {
+    for (Path root : settingsRoots) {
+      if (dir.startsWith(root) && !dir.equals(root)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static boolean isGradleProjectDir(Path dir) {
