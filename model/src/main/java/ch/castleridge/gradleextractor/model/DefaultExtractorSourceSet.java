@@ -4,7 +4,9 @@
 package ch.castleridge.gradleextractor.model;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -18,6 +20,7 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
   private List<String> compileClasspath = new ArrayList<>();
   private List<String> javacOptions = new ArrayList<>();
   private List<String> outputDirs = new ArrayList<>();
+  private Map<String, String> dependencySources = new LinkedHashMap<>();
 
   public DefaultExtractorSourceSet() {}
 
@@ -67,6 +70,17 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
   }
 
   @Override
+  public Map<String, String> getDependencySources() {
+    return dependencySources;
+  }
+
+  public void setDependencySources(Map<String, String> dependencySources) {
+    this.dependencySources = dependencySources != null
+        ? new LinkedHashMap<>(dependencySources)
+        : new LinkedHashMap<>();
+  }
+
+  @Override
   public boolean equals(Object obj) {
     if (this == obj) {
       return true;
@@ -79,11 +93,12 @@ public final class DefaultExtractorSourceSet implements ExtractorSourceSet {
         && Objects.equals(sourceDirs, other.sourceDirs)
         && Objects.equals(compileClasspath, other.compileClasspath)
         && Objects.equals(javacOptions, other.javacOptions)
-        && Objects.equals(outputDirs, other.outputDirs);
+        && Objects.equals(outputDirs, other.outputDirs)
+        && Objects.equals(dependencySources, other.dependencySources);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, sourceDirs, compileClasspath, javacOptions, outputDirs);
+    return Objects.hash(name, sourceDirs, compileClasspath, javacOptions, outputDirs, dependencySources);
   }
 }

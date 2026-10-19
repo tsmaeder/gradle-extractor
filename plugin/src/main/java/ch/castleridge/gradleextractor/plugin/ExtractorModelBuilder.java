@@ -175,6 +175,7 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     }
     out.setOutputDirs(outputs);
 
+    out.setDependencySources(DependencySourcesResolver.resolve(p, sourceSet));
     out.setJavacOptions(resolveJavacOptions(p, sourceSet));
     return out;
   }

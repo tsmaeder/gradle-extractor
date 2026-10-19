@@ -5,16 +5,19 @@ package ch.castleridge.gradleextractor.map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import ch.castleridge.gradleextractor.mbt.MbtDependencyModule;
 import ch.castleridge.gradleextractor.mbt.MbtDocument;
 import ch.castleridge.gradleextractor.mbt.MbtNamespace;
 import ch.castleridge.gradleextractor.model.DefaultExtractorModel;
@@ -134,6 +137,50 @@ class ProjectMapperTest {
     MbtDocument doc = ProjectMapper.toMbt(workspace, model(lib, app));
     assertTrue(doc.namespaces.get("ex:app:1.0").dependsOn.contains("ex:lib:1.0"));
     assertEquals(0, doc.namespaces.get("ex:app:1.0").dependencyModules.size());
+  }
+
+  @Test
+  void externalJarWithSourcesMapGetsSourcesUri() throws IOException {
+    Path externalJar = workspace.resolve("caches/guava-33.0.jar");
+    Path sourcesJar = workspace.resolve("caches/guava-33.0-sources.jar");
+    Path appOut = workspace.resolve("app/build/classes/java/main");
+    Files.createDirectories(externalJar.getParent());
+    Files.writeString(externalJar, "jar");
+    Files.writeString(sourcesJar, "sources");
+
+    String jarPath = externalJar.toAbsolutePath().normalize().toString();
+    DefaultExtractorSourceSet main = sourceSet("main",
+        List.of(jarPath), List.of(appOut.toString()));
+    main.setDependencySources(Map.of(jarPath, sourcesJar.toAbsolutePath().normalize().toString()));
+
+    DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"), main);
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(app));
+
+    MbtDependencyModule dep = doc.dependencyModules.stream()
+        .filter(m -> "guava-33.0".equals(m.id))
+        .findFirst()
+        .orElseThrow();
+    assertTrue(dep.jar.endsWith("guava-33.0.jar"));
+    assertTrue(dep.sources.endsWith("guava-33.0-sources.jar"));
+    assertTrue(dep.sources.startsWith("file:"));
+  }
+
+  @Test
+  void externalJarWithoutSourcesMapLeavesSourcesNull() throws IOException {
+    Path externalJar = workspace.resolve("caches/guava-33.0.jar");
+    Path appOut = workspace.resolve("app/build/classes/java/main");
+    Files.createDirectories(externalJar.getParent());
+    Files.writeString(externalJar, "jar");
+
+    DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"),
+        sourceSet("main", List.of(externalJar.toString()), List.of(appOut.toString())));
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(app));
+
+    MbtDependencyModule dep = doc.dependencyModules.stream()
+        .filter(m -> "guava-33.0".equals(m.id))
+        .findFirst()
+        .orElseThrow();
+    assertNull(dep.sources);
   }
 
   private static DefaultExtractorModel model(DefaultExtractorProject... projects) {

@@ -5,6 +5,7 @@ package ch.castleridge.gradleextractor.model;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One source set (e.g. {@code main}, {@code test}) within an {@link ExtractorProject}.
@@ -27,4 +28,10 @@ public interface ExtractorSourceSet extends Serializable {
    * back to workspace namespaces.
    */
   List<String> getOutputDirs();
+
+  /**
+   * Absolute binary jar path to absolute sources jar path for external
+   * dependencies that resolved a sources artifact. Missing sources are omitted.
+   */
+  Map<String, String> getDependencySources();
 }

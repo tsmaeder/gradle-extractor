@@ -73,6 +73,9 @@ public final class ProjectMapper {
           }
         }
 
+        Map<String, String> dependencySources = sourceSet.getDependencySources() != null
+            ? sourceSet.getDependencySources()
+            : Map.of();
         LinkedHashSet<String> dependsOn = new LinkedHashSet<>();
         for (String cpEntry : sourceSet.getCompileClasspath()) {
           if (cpEntry == null || cpEntry.isBlank()) {
@@ -88,7 +91,9 @@ public final class ProjectMapper {
           }
           if (Files.isRegularFile(entry) && cpEntry.endsWith(".jar")) {
             String id = jarId(entry);
-            depsById.putIfAbsent(id, new MbtDependencyModule(id, toFileUri(entry), null));
+            String sourcesPath = lookupSources(dependencySources, cpEntry, entry);
+            String sourcesUri = sourcesPath != null ? toFileUri(Path.of(sourcesPath)) : null;
+            putDependencyModule(depsById, id, toFileUri(entry), sourcesUri);
             ns.dependencyModules.add(id);
           }
         }
@@ -198,6 +203,27 @@ public final class ProjectMapper {
       name = name.substring(0, name.length() - 4);
     }
     return name;
+  }
+
+  private static String lookupSources(
+      Map<String, String> dependencySources, String cpEntry, Path entry) {
+    String sources = dependencySources.get(cpEntry);
+    if (sources != null) {
+      return sources;
+    }
+    return dependencySources.get(entry.toString());
+  }
+
+  private static void putDependencyModule(
+      Map<String, MbtDependencyModule> depsById, String id, String jarUri, String sourcesUri) {
+    MbtDependencyModule existing = depsById.get(id);
+    if (existing == null) {
+      depsById.put(id, new MbtDependencyModule(id, jarUri, sourcesUri));
+      return;
+    }
+    if (existing.sources == null && sourcesUri != null) {
+      depsById.put(id, new MbtDependencyModule(id, jarUri, sourcesUri));
+    }
   }
 
   private static String toFileUri(Path path) {
