@@ -23,8 +23,8 @@ public final class InitScript {
             classpath files('%s')
           }
         }
-        allprojects {
-          apply plugin: ch.castleridge.gradleextractor.plugin.ExtractorPlugin
+        gradle.lifecycle.beforeProject { project ->
+          project.apply plugin: ch.castleridge.gradleextractor.plugin.ExtractorPlugin
         }
         """.formatted(pluginPath);
     Path temp = Files.createTempFile("gradle-extractor-init-", ".gradle");
