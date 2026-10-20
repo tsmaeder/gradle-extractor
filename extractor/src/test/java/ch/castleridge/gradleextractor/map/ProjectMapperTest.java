@@ -124,19 +124,75 @@ class ProjectMapperTest {
   }
 
   @Test
-  void packagedJarUnderProjectDirMapsToMainNamespace() {
+  void packagedJarRegisteredAsOutputMapsToProducingNamespace() {
     Path libJar = workspace.resolve("lib/build/libs/lib-1.0.jar");
+    Path libOut = workspace.resolve("lib/build/classes/java/main");
     Path appOut = workspace.resolve("app/build/classes/java/main");
 
     DefaultExtractorProject lib = project("lib", ":lib", workspace.resolve("lib"),
-        sourceSet("main", List.of(),
-            List.of(workspace.resolve("lib/build/classes/java/main").toString())));
+        sourceSet("main", List.of(), List.of(libOut.toString(), libJar.toString())));
     DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"),
         sourceSet("main", List.of(libJar.toString()), List.of(appOut.toString())));
 
     MbtDocument doc = ProjectMapper.toMbt(workspace, model(lib, app));
     assertTrue(doc.namespaces.get("ex:app:1.0").dependsOn.contains("ex:lib:1.0"));
     assertEquals(0, doc.namespaces.get("ex:app:1.0").dependencyModules.size());
+  }
+
+  @Test
+  void testFixturesOutputDirMapsToTestFixturesNamespace() {
+    Path fixturesOut = workspace.resolve("core/build/classes/java/testFixtures");
+    Path consumerOut = workspace.resolve("lib/build/classes/java/test");
+
+    DefaultExtractorProject core = project("core", ":core", workspace.resolve("core"),
+        sourceSet("main", List.of(),
+            List.of(workspace.resolve("core/build/classes/java/main").toString())),
+        sourceSet("testFixtures", List.of(), List.of(fixturesOut.toString())));
+    DefaultExtractorProject lib = project("lib", ":lib", workspace.resolve("lib"),
+        sourceSet("main", List.of(),
+            List.of(workspace.resolve("lib/build/classes/java/main").toString())),
+        sourceSet("test", List.of(fixturesOut.toString()), List.of(consumerOut.toString())));
+
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(core, lib));
+    String fixturesId = "ex:core:1.0:testFixtures";
+    assertTrue(doc.namespaces.get("ex:lib:1.0:test").dependsOn.contains(fixturesId));
+    assertFalse(doc.namespaces.get("ex:lib:1.0:test").dependsOn.contains("ex:core:1.0"));
+  }
+
+  @Test
+  void testFixturesJarMapsToTestFixturesNamespaceNotMain() {
+    Path fixturesJar = workspace.resolve("core/build/libs/core-test-fixtures.jar");
+    Path fixturesOut = workspace.resolve("core/build/classes/java/testFixtures");
+    Path consumerOut = workspace.resolve("lib/build/classes/java/test");
+
+    DefaultExtractorProject core = project("core", ":core", workspace.resolve("core"),
+        sourceSet("main", List.of(),
+            List.of(workspace.resolve("core/build/classes/java/main").toString())),
+        sourceSet("testFixtures", List.of(),
+            List.of(fixturesOut.toString(), fixturesJar.toString())));
+    DefaultExtractorProject lib = project("lib", ":lib", workspace.resolve("lib"),
+        sourceSet("main", List.of(),
+            List.of(workspace.resolve("lib/build/classes/java/main").toString())),
+        sourceSet("test", List.of(fixturesJar.toString()), List.of(consumerOut.toString())));
+
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(core, lib));
+    assertTrue(doc.namespaces.get("ex:lib:1.0:test").dependsOn.contains("ex:core:1.0:testFixtures"));
+    assertFalse(doc.namespaces.get("ex:lib:1.0:test").dependsOn.contains("ex:core:1.0"));
+  }
+
+  @Test
+  void unregisteredPathUnderProjectDirIsNotAttributedToMain() {
+    Path stray = workspace.resolve("lib/build/tmp/transform/lib.jar");
+    Path appOut = workspace.resolve("app/build/classes/java/main");
+
+    DefaultExtractorProject lib = project("lib", ":lib", workspace.resolve("lib"),
+        sourceSet("main", List.of(),
+            List.of(workspace.resolve("lib/build/classes/java/main").toString())));
+    DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"),
+        sourceSet("main", List.of(stray.toString()), List.of(appOut.toString())));
+
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(lib, app));
+    assertFalse(doc.namespaces.get("ex:app:1.0").dependsOn.contains("ex:lib:1.0"));
   }
 
   @Test

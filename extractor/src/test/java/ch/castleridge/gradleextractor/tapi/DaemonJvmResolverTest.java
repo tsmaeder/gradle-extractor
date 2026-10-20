@@ -199,6 +199,26 @@ class DaemonJvmResolverTest {
     assertEquals(j17.home().toFile(), selected);
   }
 
+  @Test
+  void resolveUsesAncestorWrapperForIncludedBuild() throws Exception {
+    writeWrapper(temp, "9.5.0");
+    Path included = temp.resolve("build-logic");
+    Files.createDirectories(included);
+
+    JdkInstallation j17 = new JdkInstallation(Path.of("/jdk-17"), 17);
+    JdkInstallation j25 = new JdkInstallation(Path.of("/jdk-25"), 25);
+
+    File selected = DaemonJvmResolver.resolve(
+        included,
+        List.of(j17, j25),
+        Optional.empty(),
+        Optional.of(j17),
+        Optional.empty());
+
+    assertEquals(j17.home().toFile(), selected);
+    assertEquals(temp.toAbsolutePath().normalize(), DaemonJvmResolver.findWrapperRoot(included));
+  }
+
   private static void writeWrapper(Path projectDir, String version) throws Exception {
     Path wrapperDir = projectDir.resolve("gradle/wrapper");
     Files.createDirectories(wrapperDir);

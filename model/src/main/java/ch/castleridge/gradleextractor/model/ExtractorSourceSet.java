@@ -23,9 +23,9 @@ public interface ExtractorSourceSet extends Serializable {
   List<String> getJavacOptions();
 
   /**
-   * Absolute class-output directories for this source set (from
-   * {@code SourceSetOutput.getClassesDirs()}), used to map classpath entries
-   * back to workspace namespaces.
+   * Absolute output paths for this source set (class dirs, resources dir, jar
+   * archive when configured), used to map classpath entries back to workspace
+   * namespaces.
    */
   List<String> getOutputDirs();
 

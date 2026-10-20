@@ -11,6 +11,8 @@ import ch.castleridge.gradleextractor.mbt.MbtDocument;
 
 /**
  * Drains a todo set of Gradle project directories build-by-build, shortest path first.
+ * Included builds are mapped inside the parent composite by {@code ExtractorModelBuilder},
+ * so they do not need a separate Tooling API connection.
  */
 public final class DrainLoop {
 
@@ -18,7 +20,8 @@ public final class DrainLoop {
   public interface BuildImporter {
     /**
      * Imports one Gradle build rooted at {@code projectDir} and returns the partial mbt document
-     * plus every project directory that belongs to that build.
+     * plus every project directory that belongs to that build (including included builds mapped
+     * from the composite).
      */
     ImportResult importBuild(Path projectDir) throws Exception;
   }

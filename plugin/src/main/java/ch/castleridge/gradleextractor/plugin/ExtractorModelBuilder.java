@@ -10,12 +10,17 @@ import java.util.List;
 import java.util.Set;
 
 import org.gradle.api.Project;
+import org.gradle.api.initialization.IncludedBuild;
+import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
+import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.CompileOptions;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.composite.IncludedBuildInternal;
 import org.gradle.tooling.provider.model.ToolingModelBuilder;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
@@ -28,7 +33,9 @@ import ch.castleridge.gradleextractor.model.ExtractorProject;
 import ch.castleridge.gradleextractor.model.ExtractorSourceSet;
 
 /**
- * Builds {@link ExtractorModel} for the connected Gradle build (all projects).
+ * Builds {@link ExtractorModel} for the connected Gradle build (all projects)
+ * and recursively maps included builds from the same composite (they are not
+ * reliable as standalone Tooling API roots).
  */
 public final class ExtractorModelBuilder implements ToolingModelBuilder {
 
@@ -42,7 +49,21 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     Project root = project.getRootProject();
     List<ExtractorProject> projects = new ArrayList<>();
     Set<String> covered = new LinkedHashSet<>();
+    Set<File> visitedBuildRoots = new LinkedHashSet<>();
 
+    mapBuildProjects(root, projects, covered, visitedBuildRoots);
+    return new DefaultExtractorModel(projects, new ArrayList<>(covered));
+  }
+
+  private static void mapBuildProjects(
+      Project root,
+      List<ExtractorProject> projects,
+      Set<String> covered,
+      Set<File> visitedBuildRoots) {
+    File rootDir = root.getProjectDir().getAbsoluteFile();
+    if (!visitedBuildRoots.add(rootDir)) {
+      return;
+    }
     for (Project p : root.getAllprojects()) {
       // Gradle 9+ requires the project's exclusive lock when resolving configurations.
       // ToolingModelBuilder only locks the queried project, so lock each subproject
@@ -50,14 +71,35 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
       projects.add(mapProjectLocked(p));
       addCovered(covered, p);
     }
-
-    for (org.gradle.api.initialization.IncludedBuild included : root.getGradle().getIncludedBuilds()) {
-      File includedRoot = included.getProjectDir();
-      covered.add(includedRoot.getAbsolutePath());
-      addBuildFiles(covered, includedRoot);
+    for (IncludedBuild included : root.getGradle().getIncludedBuilds()) {
+      mapIncludedBuild(included, projects, covered, visitedBuildRoots);
     }
+  }
 
-    return new DefaultExtractorModel(projects, new ArrayList<>(covered));
+  /**
+   * Maps an included build's projects from the already-configured composite.
+   * Standalone TAPI connections to include-build dirs often fail (e.g. type-safe
+   * project accessors), so we walk {@link IncludedBuildInternal} instead.
+   */
+  private static void mapIncludedBuild(
+      IncludedBuild included,
+      List<ExtractorProject> projects,
+      Set<String> covered,
+      Set<File> visitedBuildRoots) {
+    if (!(included instanceof IncludedBuildInternal)) {
+      // Fallback: at least mark the root so the drain loop does not retry it alone.
+      File dir = included.getProjectDir().getAbsoluteFile();
+      if (visitedBuildRoots.add(dir)) {
+        covered.add(dir.getAbsolutePath());
+        addBuildFiles(covered, dir);
+      }
+      return;
+    }
+    BuildState target = ((IncludedBuildInternal) included).getTarget();
+    target.ensureProjectsConfigured();
+    GradleInternal gradle = target.getMutableModel();
+    Project includedRoot = gradle.getRootProject();
+    mapBuildProjects(includedRoot, projects, covered, visitedBuildRoots);
   }
 
   private static void addCovered(Set<String> covered, Project p) {
@@ -167,17 +209,42 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
     }
     out.setCompileClasspath(classpath);
 
-    List<String> outputs = new ArrayList<>();
+    out.setOutputDirs(collectOutputPaths(p, sourceSet));
+
+    out.setDependencySources(DependencySourcesResolver.resolve(p, sourceSet));
+    out.setJavacOptions(resolveJavacOptions(p, sourceSet));
+    return out;
+  }
+
+  /**
+   * Paths that identify this source set on a compile classpath: class dirs,
+   * resources dir, and the source set's jar archive when configured. Used by
+   * ProjectMapper to attribute classpath entries to the correct namespace.
+   */
+  private static List<String> collectOutputPaths(Project p, SourceSet sourceSet) {
+    LinkedHashSet<String> outputs = new LinkedHashSet<>();
     for (File dir : sourceSet.getOutput().getClassesDirs().getFiles()) {
       if (dir != null) {
         outputs.add(dir.getAbsolutePath());
       }
     }
-    out.setOutputDirs(outputs);
-
-    out.setDependencySources(DependencySourcesResolver.resolve(p, sourceSet));
-    out.setJavacOptions(resolveJavacOptions(p, sourceSet));
-    return out;
+    File resourcesDir = sourceSet.getOutput().getResourcesDir();
+    if (resourcesDir != null) {
+      outputs.add(resourcesDir.getAbsolutePath());
+    }
+    String jarTaskName = sourceSet.getJarTaskName();
+    Object jarTask = p.getTasks().findByName(jarTaskName);
+    if (jarTask instanceof Jar) {
+      try {
+        File archive = ((Jar) jarTask).getArchiveFile().get().getAsFile();
+        if (archive != null) {
+          outputs.add(archive.getAbsolutePath());
+        }
+      } catch (Exception ignored) {
+        // Archive path unavailable until configured; class dirs still map.
+      }
+    }
+    return new ArrayList<>(outputs);
   }
 
   private static List<String> resolveJavacOptions(Project p, SourceSet sourceSet) {

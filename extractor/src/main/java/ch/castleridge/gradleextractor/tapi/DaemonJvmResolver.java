@@ -76,7 +76,9 @@ public final class DaemonJvmResolver {
       Optional<JdkInstallation> override,
       Optional<JdkInstallation> javaHome,
       Optional<JdkInstallation> javaHomeEnv) {
-    GradleVersion gradle = readWrapperVersion(projectDir).orElse(new GradleVersion(8, 0, 0));
+    Path wrapperRoot = findWrapperRoot(projectDir);
+    Path versionRoot = wrapperRoot != null ? wrapperRoot : projectDir;
+    GradleVersion gradle = readWrapperVersion(versionRoot).orElse(new GradleVersion(8, 0, 0));
     int minJava = minJavaFor(gradle);
     int maxJava = maxJavaFor(gradle);
 
@@ -91,7 +93,7 @@ public final class DaemonJvmResolver {
               + " requires a daemon JVM between " + minJava + " and " + maxJava);
     }
 
-    Optional<Integer> pinned = readDaemonJvmToolchainVersion(projectDir);
+    Optional<Integer> pinned = readDaemonJvmToolchainVersion(versionRoot);
     if (pinned.isPresent()) {
       int required = pinned.get();
       if (required < minJava || required > maxJava) {
@@ -116,6 +118,21 @@ public final class DaemonJvmResolver {
                 + ". Install a compatible JDK or set " + ENV_OVERRIDE + "."))
         .home
         .toFile();
+  }
+
+  /**
+   * Nearest directory (self or ancestor) with {@code gradle/wrapper/gradle-wrapper.properties}.
+   * Included builds typically inherit the consumer's wrapper.
+   */
+  static Path findWrapperRoot(Path start) {
+    Path dir = start.toAbsolutePath().normalize();
+    while (dir != null) {
+      if (Files.isRegularFile(dir.resolve("gradle/wrapper/gradle-wrapper.properties"))) {
+        return dir;
+      }
+      dir = dir.getParent();
+    }
+    return null;
   }
 
   static Optional<GradleVersion> readWrapperVersion(Path projectDir) {

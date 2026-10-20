@@ -6,11 +6,8 @@ package ch.castleridge.gradleextractor.map;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -37,25 +34,21 @@ public final class ProjectMapper {
     MbtDocument document = new MbtDocument();
     Map<String, String> pathToNamespaceId = new LinkedHashMap<>();
     Map<String, MbtDependencyModule> depsById = new LinkedHashMap<>();
-    Map<Path, String> outputDirToNamespace = new LinkedHashMap<>();
-    List<ProjectDirEntry> projectDirs = new ArrayList<>();
+    Map<Path, String> outputPathToNamespace = new LinkedHashMap<>();
 
     for (ExtractorProject project : model.getProjects()) {
-      Path projectDir = Path.of(project.getProjectDir()).toAbsolutePath().normalize();
-      projectDirs.add(new ProjectDirEntry(projectDir, project));
       for (ExtractorSourceSet sourceSet : project.getSourceSets()) {
         String nsId = namespaceId(project, sourceSet);
         pathToNamespaceId.put(projectKey(project.getPath(), sourceSet.getName()), nsId);
-        for (String outputDir : sourceSet.getOutputDirs()) {
-          if (outputDir == null || outputDir.isBlank()) {
+        for (String outputPath : sourceSet.getOutputDirs()) {
+          if (outputPath == null || outputPath.isBlank()) {
             continue;
           }
-          Path out = Path.of(outputDir).toAbsolutePath().normalize();
-          outputDirToNamespace.put(out, nsId);
+          Path out = Path.of(outputPath).toAbsolutePath().normalize();
+          outputPathToNamespace.put(out, nsId);
         }
       }
     }
-    projectDirs.sort(Comparator.comparingInt((ProjectDirEntry e) -> e.dir.getNameCount()).reversed());
 
     for (ExtractorProject project : model.getProjects()) {
       String mainNsId = pathToNamespaceId.get(projectKey(project.getPath(), "main"));
@@ -82,7 +75,7 @@ public final class ProjectMapper {
             continue;
           }
           Path entry = Path.of(cpEntry).toAbsolutePath().normalize();
-          String workspaceNs = namespaceForClasspathEntry(entry, outputDirToNamespace, projectDirs);
+          String workspaceNs = namespaceForClasspathEntry(entry, outputPathToNamespace);
           if (workspaceNs != null) {
             if (!workspaceNs.equals(selfNsId)) {
               dependsOn.add(workspaceNs);
@@ -129,29 +122,17 @@ public final class ProjectMapper {
   }
 
   /**
-   * Maps a classpath entry to a workspace namespace id, or {@code null} if it is
-   * not under any known project output / project directory.
+   * Maps a classpath entry to a workspace namespace id via longest-prefix match
+   * against registered source-set outputs (class dirs, resources, jars). Returns
+   * {@code null} when the entry matches no output — including paths under a
+   * project directory that are not a known output of any source set.
    */
   static String namespaceForClasspathEntry(
       Path entry,
-      Map<Path, String> outputDirToNamespace,
-      List<ProjectDirEntry> projectDirsLongestFirst) {
-    String fromOutput = matchOutputDir(entry, outputDirToNamespace);
-    if (fromOutput != null) {
-      return fromOutput;
-    }
-    for (ProjectDirEntry projectDir : projectDirsLongestFirst) {
-      if (entry.startsWith(projectDir.dir)) {
-        return namespaceId(projectDir.project, "main");
-      }
-    }
-    return null;
-  }
-
-  private static String matchOutputDir(Path entry, Map<Path, String> outputDirToNamespace) {
+      Map<Path, String> outputPathToNamespace) {
     String best = null;
     int bestCount = -1;
-    for (Map.Entry<Path, String> e : outputDirToNamespace.entrySet()) {
+    for (Map.Entry<Path, String> e : outputPathToNamespace.entrySet()) {
       Path out = e.getKey();
       if (entry.equals(out) || entry.startsWith(out)) {
         int count = out.getNameCount();
@@ -230,6 +211,4 @@ public final class ProjectMapper {
     URI uri = path.toAbsolutePath().normalize().toUri();
     return uri.toString();
   }
-
-  record ProjectDirEntry(Path dir, ExtractorProject project) {}
 }
