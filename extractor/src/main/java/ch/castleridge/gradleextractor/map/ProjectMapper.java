@@ -186,13 +186,49 @@ public final class ProjectMapper {
     return name;
   }
 
-  private static String lookupSources(
+  /**
+   * Resolves a sources path for {@code entry}, matching dependency-sources keys
+   * by absolute normalized path. Returns {@code null} when missing or when the
+   * sources path is the same file as the binary jar.
+   */
+  static String lookupSources(
       Map<String, String> dependencySources, String cpEntry, Path entry) {
-    String sources = dependencySources.get(cpEntry);
-    if (sources != null) {
-      return sources;
+    if (dependencySources == null || dependencySources.isEmpty() || entry == null) {
+      return null;
     }
-    return dependencySources.get(entry.toString());
+    Path normalizedEntry = entry.toAbsolutePath().normalize();
+    String sources = dependencySources.get(cpEntry);
+    if (sources == null) {
+      sources = dependencySources.get(entry.toString());
+    }
+    if (sources == null) {
+      sources = dependencySources.get(normalizedEntry.toString());
+    }
+    if (sources == null) {
+      for (Map.Entry<String, String> e : dependencySources.entrySet()) {
+        if (e.getKey() == null || e.getKey().isBlank()) {
+          continue;
+        }
+        Path keyPath = Path.of(e.getKey()).toAbsolutePath().normalize();
+        if (keyPath.equals(normalizedEntry)) {
+          sources = e.getValue();
+          break;
+        }
+      }
+    }
+    return distinctSourcesPath(sources, normalizedEntry);
+  }
+
+  /** {@code null} when {@code sources} is blank or the same path as {@code binaryJar}. */
+  static String distinctSourcesPath(String sources, Path binaryJar) {
+    if (sources == null || sources.isBlank() || binaryJar == null) {
+      return null;
+    }
+    Path sourcesPath = Path.of(sources).toAbsolutePath().normalize();
+    if (sourcesPath.equals(binaryJar.toAbsolutePath().normalize())) {
+      return null;
+    }
+    return sourcesPath.toString();
   }
 
   private static void putDependencyModule(

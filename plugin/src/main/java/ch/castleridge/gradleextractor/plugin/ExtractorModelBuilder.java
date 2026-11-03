@@ -205,7 +205,10 @@ public final class ExtractorModelBuilder implements ToolingModelBuilder {
 
     List<String> classpath = new ArrayList<>();
     for (File file : sourceSet.getCompileClasspath()) {
-      classpath.add(file.getAbsolutePath());
+      String normalized = DependencySourcesResolver.normalizePath(file);
+      if (normalized != null) {
+        classpath.add(normalized);
+      }
     }
     out.setCompileClasspath(classpath);
 

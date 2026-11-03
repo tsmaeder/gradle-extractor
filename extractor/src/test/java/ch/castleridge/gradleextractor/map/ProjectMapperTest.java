@@ -239,6 +239,71 @@ class ProjectMapperTest {
     assertNull(dep.sources);
   }
 
+  @Test
+  void sourcesEqualToBinaryJarAreOmitted() throws IOException {
+    Path externalJar = workspace.resolve("caches/gradle-api-9.5.0.jar");
+    Path appOut = workspace.resolve("app/build/classes/java/main");
+    Files.createDirectories(externalJar.getParent());
+    Files.writeString(externalJar, "jar");
+
+    String jarPath = externalJar.toAbsolutePath().normalize().toString();
+    DefaultExtractorSourceSet main = sourceSet("main",
+        List.of(jarPath), List.of(appOut.toString()));
+    main.setDependencySources(Map.of(jarPath, jarPath));
+
+    DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"), main);
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(app));
+
+    MbtDependencyModule dep = doc.dependencyModules.stream()
+        .filter(m -> "gradle-api-9.5.0".equals(m.id))
+        .findFirst()
+        .orElseThrow();
+    assertNull(dep.sources);
+  }
+
+  @Test
+  void lookupSourcesMatchesWhenKeySpellingDiffersOnlyByNormalization() throws IOException {
+    Path externalJar = workspace.resolve("caches/guava-33.0.jar");
+    Path sourcesJar = workspace.resolve("caches/guava-33.0-sources.jar");
+    Path appOut = workspace.resolve("app/build/classes/java/main");
+    Files.createDirectories(externalJar.getParent());
+    Files.writeString(externalJar, "jar");
+    Files.writeString(sourcesJar, "sources");
+
+    Path normalizedJar = externalJar.toAbsolutePath().normalize();
+    // Key uses a non-normalized absolute form that still resolves to the same file.
+    String oddlyKeyed = normalizedJar.getRoot()
+        .resolve(normalizedJar.subpath(0, normalizedJar.getNameCount()))
+        .toString();
+    if (oddlyKeyed.equals(normalizedJar.toString()) && normalizedJar.getNameCount() > 1) {
+      oddlyKeyed = normalizedJar.getParent().resolve(".").resolve(normalizedJar.getFileName()).toString();
+    }
+
+    DefaultExtractorSourceSet main = sourceSet("main",
+        List.of(normalizedJar.toString()), List.of(appOut.toString()));
+    main.setDependencySources(Map.of(
+        oddlyKeyed, sourcesJar.toAbsolutePath().normalize().toString()));
+
+    DefaultExtractorProject app = project("app", ":app", workspace.resolve("app"), main);
+    MbtDocument doc = ProjectMapper.toMbt(workspace, model(app));
+
+    MbtDependencyModule dep = doc.dependencyModules.stream()
+        .filter(m -> "guava-33.0".equals(m.id))
+        .findFirst()
+        .orElseThrow();
+    assertTrue(dep.sources.endsWith("guava-33.0-sources.jar"), () -> "sources=" + dep.sources);
+  }
+
+  @Test
+  void distinctSourcesPathRejectsSelfAttachment() throws IOException {
+    Path jar = workspace.resolve("lib/api.jar");
+    Files.createDirectories(jar.getParent());
+    Files.writeString(jar, "jar");
+    assertNull(ProjectMapper.distinctSourcesPath(jar.toString(), jar));
+    assertNull(ProjectMapper.distinctSourcesPath(
+        jar.toAbsolutePath().normalize().toString(), jar.toAbsolutePath().normalize()));
+  }
+
   private static DefaultExtractorModel model(DefaultExtractorProject... projects) {
     return new DefaultExtractorModel(List.of(projects), List.of());
   }
