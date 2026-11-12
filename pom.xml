@@ -15,6 +15,13 @@
   <name>gradle-extractor-parent</name>
   <description>Gradle workspace extractor for java-ls mbt.json fragments</description>
 
+  <scm>
+    <connection>scm:git:https://github.com/tsmaeder/gradle-extractor.git</connection>
+    <developerConnection>scm:git:https://github.com/tsmaeder/gradle-extractor.git</developerConnection>
+    <url>https://github.com/tsmaeder/gradle-extractor</url>
+    <tag>HEAD</tag>
+  </scm>
+
   <modules>
     <module>model</module>
     <module>plugin</module>
